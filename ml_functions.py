@@ -26,15 +26,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 
 
-def addNumbers(a, b): 
-    print("Sum is ", a + b) 
-
-def addMoreNumbers(a, b, c): 
-    print("Sum is ", a + b + c) 
-  
-def subtractNumbers(a, b): 
-    print("Difference is ", a-b) 
-
 def typo_cleaner(col_name, df):
     '''
     Function looks at column of data in pd dataframe, and makes checks 
@@ -74,20 +65,33 @@ def typo_cleaner(col_name, df):
     print('Typo cleaner finished - if no other output, no changes were made')
 
 
-# def eliminate_sparse(col_name:str):
-#     director_n = df_split_test.groupby(col_name) \
-#        .agg({col_name:'size', 'imdb_rating':'mean'}) \
-#        .rename(columns={col_name:'count','imdb_rating':'mean_rating'}) \
-#        .reset_index()
-    
-#     multiple_dirs = director_n[director_n["count"]>= 5]
-#     single_dirs = director_n[director_n["count"]< 5]
-#     multiple_dirs.sort_values('mean_rating')
+def season_plot(df):
+    # Plot Season Variation plot
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    sns.scatterplot(x='season', y='season average imdb rating',data=df.groupby(['season']).agg({ 'imdb_rating':'mean'}).reset_index().rename(columns={'imdb_rating':'season average imdb rating'}),ax = ax1, s=100, color="red", marker="+")
+    sns.scatterplot(x='season', y='imdb_rating',data=df,ax = ax1)
+    sns.lineplot(x = 'season', y='total_votes', data=df.groupby(['season']).agg({ 'total_votes':'sum'}).reset_index(), ax = ax2 )
+    ax1.set_xlabel('Season (1-9)')
+    ax1.set_ylabel('IMDB Rating')
+    ax2.set_ylabel('Total Votes')
+    plt.title('Season variation of episode popularity')
+    plt.show()
 
-#     single_dirs[col_name] = col_name +'_' + single_dirs[col_name].astype(str)
-#     to_elim_dirs = list(single_dirs[col_name])
+def director_episode_plot(df):
+    dirs = pd.concat([df[['season','episode']],df['director'].str.rsplit(";", n=-1, expand=True)], axis = 1)
+    melted_dirs = dirs.melt(id_vars = ['season','episode'], value_name = 'directors').drop('variable',axis = 1).dropna()
+    melted_dirs['directors'].value_counts(normalize=False).plot(kind='bar')
+    plt.ylabel('Number of shows directed')
+    plt.title('Number of episodes each director has contributed to')
 
-#     return to_elim_dirs
+def character_occurrences(df):
+    # How many times does each character occur in the data? (df only)
+    chars = pd.concat([df[['season','episode']],df['main_chars'].str.rsplit(";", n=-1, expand=True)], axis = 1)
+    melted_chars = chars.melt(id_vars = ['season','episode']).drop('variable',axis = 1).dropna()
+    melted_chars['value'].value_counts(normalize=False).plot(kind='bar')
+    plt.ylabel('Number of occurrences')
+    plt.title('Number of occurrences for each character')
 
 def date_and_time(df_full, df_split_test, ccc):
     df_full = pd.concat([df_split_test, ccc], axis=1)
@@ -98,6 +102,47 @@ def date_and_time(df_full, df_split_test, ccc):
     df_full['day_of_week'] = df_full['day_of_week'].apply(lambda x: days[x])
     
     return df_full
+
+def create_corr_matrix_writers(df_model_data, writer_director:str):
+    # Correlation matrix for writer and director - change string at top to chage!
+    col_list = [col for col in df_model_data.columns if writer_director in col]
+    col_list.append('imdb_rating')
+    col_list
+    # corrMatrix = df_full.drop(['episode','n_lines','n_directions','n_lines', 'n_words','n_speak_char'], axis=1)
+    corrMatrix = df_model_data[col_list]
+
+    ax3 = plt.axes()
+
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax3)
+    ax3.set_title('Correlation matrix for writers or directors')
+    plt.show()
+
+def create_corr_matrix_numeric(df):
+    corrMatrix = df[['imdb_rating','total_votes','episode','n_lines','n_directions','n_words','n_speak_char']]
+    ax1 = plt.axes()
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax1) 
+    ax1.set_title('Correlation matrix for numeric data fields')
+    plt.show()
+
+def create_df_full(df_split_test, character_cols):
+    # Reformat the date/time data to produce columns for month and day of the week
+    df_full = pd.concat([df_split_test, character_cols], axis=1)
+    df_full["month"] = df_full["air_date"].str[5:7]
+    df_full['day_of_week'] = pd.to_datetime(df_full['air_date']).dt.dayofweek
+    days = {0:'Monday',1:'Tuesday',2:'Wednesday',3:'Thursday',4:'Friday',5:'Saturday',6:'Sunday'}
+    df_full['day_of_week'] = df_full['day_of_week'].apply(lambda x: days[x])
+    df_full.drop(['season', 'air_date','main_chars','episode_name'], axis = 1, inplace=True)
+
+    return df_full
+
+def create_corr_matrix_characters(df, character_cols):
+    # Correlation between imdb_rating
+    corrMatrix = pd.concat([df['imdb_rating'], character_cols], axis=1)
+
+    ax2 = plt.axes()
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax2) 
+    ax2.set_title('Correlation matrix for characters with imdb_rating')
+    plt.show()
 
 def get_coefs(m):
     """Returns the model coefficients from a Scikit-learn model object as an array,
@@ -148,6 +193,15 @@ def model_fit(m, X, y, plot = False):
     
     return rmse
 
+def features_overview(Features):
+    fig, ax = plt.subplots(figsize=(20, 7)) 
+    feature_plot = sns.barplot(data = Features, y='coefficients',x = 'Feature' , ax=ax)
+    feature_plot.set_xticklabels(feature_plot.get_xticklabels(), rotation=45, horizontalalignment='right')
+    ax.set_xlabel('Features within the Lasso Model')
+    ax.set_ylabel('Coefficient values')
+    plt.title('Coefficients of the Features within the Lasso Polynomial Model')
+    plt.show()
+
 def dataframe_prep(dataframe,col_predicted:str):
     '''
     Create inputs X dataframe, outputs y dataframe, and split the data using test_train_split from sklearn
@@ -193,264 +247,233 @@ def elim_writers_directors(df_split_test):
 
        return to_elim_dirs, to_elim_writers
 
+def get_CI(y,y_hat):
+    '''
+    y = Input target variable
+    y_hat = Output test 
+    Returns a test_error, standard_error rounded to 3 dp. 
+    '''
+    mean_error = np.mean(abs(y-y_hat)) 
+    standard_error = np.sqrt(np.var(y - y_hat,ddof=1)/(len(y)))
+    CI = mean_error + np.array([- 2*standard_error,2*standard_error])    
+    return  CI
 
-# def run_linear_regression(dataframe):
-#     '''
-#     Run standard linear regression
-#     Function immediately drops the column we are predicting (TODO: have this as an input string)
-#     input: dataframe on which you wish to run linea regression
-#             where all features are dummies, i.e. 0/1
-#     '''
+
+########################## MODELS ###############################################
+
+def run_linear_regression(dataframe, show_output:bool):
+    '''
+    Run standard linear regression
+    Function immediately drops the column we are predicting
+    input: dataframe on which you wish to run linea regression
+            where all features are dummies, i.e. 0/1
+    '''
     
-#     X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
+    X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
 
-#     #lm = LinearRegression().fit(X_train, y_train)
-#     #model_fit(lm, X_test, y_test, plot=True)
-#     #print("number of coefficients:",len(get_coefs(lm)))
+    first = make_pipeline(
+            LinearRegression(fit_intercept = False))
 
-#     first = make_pipeline(
-#             LinearRegression(fit_intercept = False)
-#         )
+    parameters = {'linearregression__normalize': [True,False]}
 
-#     parameters = {'linearregression__normalize': [True,False]}
+    kf = KFold(n_splits=5, shuffle=True, random_state=0)
 
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
+    first_grid = GridSearchCV(first,parameters,  cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
 
-#     #this is the name you must change for each dataframe
-#     first_grid = GridSearchCV(first,parameters,  cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
+    y_hat = first_grid.predict(X_test)
+    y_hat_train = first_grid.predict(X_train)
+    model_fit(first_grid, X_test, y_test, plot=show_output)
+    rmse_test = mean_squared_error(y_test, y_hat, squared=False)
+    rmse_train = mean_squared_error(y_train, y_train, squared=False)
 
-#     #==Print the results========
-#     print("best index: ", first_grid.best_index_) #position of the array of the degree
-#     print("best param: ", first_grid.best_params_)
-#     print("best neg_root_mean_squared_error (score): ", first_grid.best_score_ *-1)
-#     print("number of coefficients:", len(first_grid.best_estimator_.named_steps['linearregression'].coef_))
+    if show_output == True:
+        #==Print the results========
+        print("best index: ", first_grid.best_index_) #position of the array of the degree
+        print("best param: ", first_grid.best_params_)
+        print("best neg_root_mean_squared_error (score): ", first_grid.best_score_ *-1)
+        print("number of coefficients:", len(first_grid.best_estimator_.named_steps['linearregression'].coef_))
 
-#     y_hat = first_grid.predict(X_test)
-#     model_fit(first_grid, X_test, y_test, plot=True)
-#     rmse_test = mean_squared_error(y_test, y_hat, squared=False)
-#     rmse_train = mean_squared_error(y_train, y_train, squared=False)
+        print('rmse_test == ', rmse_test)
+        print('rmse_train == ', rmse_train)
+        print(first_grid.best_estimator_.named_steps['linearregression'].coef_)
+        print("intercept == ",first_grid.best_estimator_.named_steps['linearregression'].intercept_)
 
-#     print('rmse_test == ', rmse_test)
-#     print('rmse_train == ', rmse_train)
-#     print(first_grid.best_estimator_.named_steps['linearregression'].coef_)
-#     print("intercept == ",first_grid.best_estimator_.named_steps['linearregression'].intercept_)
+    res = pd.DataFrame(data = {'y': y_test, 'y_hat': y_hat, 'resid': round(y_test - y_hat,1)})
 
-#     res = pd.DataFrame(
-#             data = {'y': y_test, 'y_hat': y_hat, 'resid': round(y_test - y_hat,1)}
-#         )
+    res_train = pd.DataFrame(data={'y_train': y_train, 'y_hat_train': y_hat_train})
     
-#     return res,rmse_train,rmse_test
+    return res, res_train, rmse_train, rmse_test
 
-# def run_linear_regr_standardisation(dataframe):
-#     '''
-#     Linear regression model with standardisation
+def run_poly_noint(dataframe,show_output:bool):
+    '''
+    Polynomial regression model with standardisation
 
-#     '''
-#     # Lose the columns we are predicting from inputs X, and write this to outputs y
-#     X = dataframe.drop('imdb_rating', axis = 1)
-#     y = dataframe["imdb_rating"]
+    '''
 
-#     # Test train split:
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+    X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
+
+    fffirst_2 = make_pipeline(
+            make_column_transformer(
+                (PolynomialFeatures(include_bias = False), ['episode']),
+                (PolynomialFeatures(include_bias = False), ['total_votes']),
+                (PolynomialFeatures(include_bias = False), ['n_lines']),
+                (PolynomialFeatures(include_bias = False), ['n_directions']),
+                (PolynomialFeatures(include_bias = False), ['n_words']),
+                (PolynomialFeatures(include_bias = False), ['n_speak_char']),
+                remainder = 'passthrough'
+            ),
+            LinearRegression(fit_intercept=False)
+        )
+
+    parameters = {
+        'columntransformer__polynomialfeatures-1__degree': np.arange(1,3,1),
+        'columntransformer__polynomialfeatures-2__degree': np.arange(1,3,1),
+        'columntransformer__polynomialfeatures-3__degree': np.arange(1,3,1),
+        'columntransformer__polynomialfeatures-4__degree': np.arange(1,3,1),
+        'columntransformer__polynomialfeatures-5__degree': np.arange(1,3,1),
+        'columntransformer__polynomialfeatures-6__degree': np.arange(1,3,1)
+
+    }
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=0)
+    fffirst2_grid = GridSearchCV(fffirst_2, parameters,  cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
+
+    y_hat = fffirst2_grid.predict(X_test)
+    y_hat_train = fffirst2_grid.predict(X_train)
     
-#     first_2 = make_pipeline(
-#             StandardScaler(),
-#             LinearRegression(fit_intercept = False)
-#         )
+    model_fit(fffirst2_grid, X_test, y_test, plot=show_output) #compute over test
+    rmse_test = mean_squared_error(y_test, y_hat, squared=False)
+    rmse_train = mean_squared_error(y_train, y_train, squared=False)
 
-#     parameters = {'linearregression__normalize': [True,False]}
-
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
-#     first2_grid = GridSearchCV(first_2,parameters,  cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
-
-
-#     print("best index: ", first2_grid.best_index_) #position of the array of the degree
-#     print("best param: ", first2_grid.best_params_)
-#     print("best score: ", first2_grid.best_score_ *-1)
-#     print("number of coefficients:",len(first2_grid.best_estimator_.named_steps['linearregression'].coef_))
-
-#     y_hat = first2_grid.predict(X_test)
-#     model_fit(first2_grid, X_test, y_test, plot=True) #compute over test
-#     rmse_test = mean_squared_error(y_test, y_hat, squared=False)
-#     rmse_train = mean_squared_error(y_train, y_train, squared=False)
-
-#     print('rmse_test == ', rmse_test)
-#     print('rmse_train == ', rmse_train)
-#     print(first2_grid.best_estimator_.named_steps['linearregression'].coef_)
-#     print("intercept == ",first2_grid.best_estimator_.named_steps['linearregression'].intercept_)
-
-#     res = pd.DataFrame(
-#             data = {'y': y_test, 'y_hat': y_hat, 'resid': round(y_test - y_hat,1)}
-#         )
-
-#     return res, rmse_train, rmse_test
-
-# def run_polynomial_regression(dataframe):
-#     '''
-#     Run the polynomial regression model 
-#     '''
-
-#     # Lose the columns we are predicting from inputs X, and write this to outputs y
-#     X = dataframe.drop('imdb_rating', axis = 1)
-#     y = dataframe["imdb_rating"]
-
-#     # Test train split:
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-
-#     second = make_pipeline(
-#             PolynomialFeatures(),
-#             LinearRegression()
-#         )
-
-#     parameters = {
-#         'polynomialfeatures__degree': np.arange(1,3,1),
-#         "linearregression__fit_intercept" : [True,False],
-#         'linearregression__normalize': [True,False]
-#     }
-
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
-
-#     second_grid = GridSearchCV(second, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
-#     print("best index: ", second_grid.best_index_) #position of the array of the degree
-#     print("best param: ", second_grid.best_params_)
-#     print("best score: ", second_grid.best_score_ *-1)
-#     print("number of coefficients:",len(second_grid.best_estimator_.named_steps['linearregression'].coef_))
-
-#     y_hat = second_grid.predict(X_test)
-#     model_fit(second_grid, X_test, y_test, plot=True)
-#     rmse = mean_squared_error(y_test, y_hat, squared=False)
-#     #print(rmse)
-#     print(second_grid.best_estimator_.named_steps['linearregression'].coef_)
-#     print("intercept == ",second_grid.best_estimator_.named_steps['linearregression'].intercept_)
+    if show_output == True:
+        print("best index: ", fffirst2_grid.best_index_) #position of the array of the degree
+        print("best param: ", fffirst2_grid.best_params_)
+        print("best score: ", fffirst2_grid.best_score_ *-1)
+        print("number of coefficients:",len(fffirst2_grid.best_estimator_.named_steps['linearregression'].coef_))
     
-# def run_lasso_(dataframe):
-#     '''
-#     Run Lasso... 
+        print('rmse_test == ', rmse_test)
+        print('rmse_train == ', rmse_train)
+        print(fffirst2_grid.best_estimator_.named_steps['linearregression'].coef_)
+        print("intercept == ",fffirst2_grid.best_estimator_.named_steps['linearregression'].intercept_)
 
-#     '''
+    res = pd.DataFrame(
+                data = {'y': y_test, 'y_hat': y_hat, 'resid': round(y_test - y_hat,1)}
+            )
+    res_train = pd.DataFrame(data = {'y_train': y_train, 'y_hat_train': y_hat_train})
     
-#     # Lose the columns we are predicting from inputs X, and write this to outputs y
-#     X = dataframe.drop('imdb_rating', axis = 1)
-#     y = dataframe["imdb_rating"]
+    return res, res_train, rmse_train, rmse_test
 
-#     # Test train split:
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+def run_polynomial_regression(dataframe, show_output:bool):
+    '''
+    Run the polynomial regression model 
+    '''
 
+    # # Lose the columns we are predicting from inputs X, and write this to outputs y
+    # X = dataframe.drop('imdb_rating', axis = 1)
+    # y = dataframe["imdb_rating"]
 
-#     alpha_list = np.linspace(0.01, 15, num=100)
+    # # Test train split:
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
 
-#     third = make_pipeline(
-#             StandardScaler(),
-#             PolynomialFeatures(),
-#             Lasso()
-#         )
+    X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
 
-#     parameters = {
-#         'polynomialfeatures__degree': np.arange(1,3,1),
-#         'lasso__alpha': alpha_list,
-#         'polynomialfeatures__include_bias': [True,False]
-#     }
+    second = make_pipeline(
+            PolynomialFeatures(),
+            LinearRegression(fit_intercept = False)
+        )
 
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
+    parameters = {
+        'polynomialfeatures__degree': np.arange(1,3,1),
+        'linearregression__normalize': [True,False]
+    }
 
-#     third_grid = GridSearchCV(third, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
-#     print("best index: ", third_grid.best_index_) #position of the array of the degree
-#     print("best param: ", third_grid.best_params_)
-#     print("best score: ", third_grid.best_score_ *-1)
-#     print("number of coefficients:",len(third_grid.best_estimator_.named_steps["lasso"].coef_))
+    kf = KFold(n_splits=5, shuffle=True, random_state=0)
 
+    second_grid = GridSearchCV(second, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
 
-#     y_hat = third_grid.predict(X_test)
-#     model_fit(third_grid, X_test, y_test, plot=True)
-#     rmse = mean_squared_error(y_test, y_hat, squared=False)
-#     print(rmse)
-#     print("coefficients == ", third_grid.best_estimator_.named_steps["lasso"].coef_)
-#     print("intercept == ", third_grid.best_estimator_.named_steps["lasso"].intercept_)
+    y_hat = second_grid.predict(X_test)
+    y_hat_train = second_grid.predict(X_train)
+    model_fit(second_grid, X_test, y_test, plot=show_output)
+    rmse_test = mean_squared_error(y_test, y_hat, squared=False)
+    rmse_train = mean_squared_error(y_train, y_train, squared=False)
 
+    if show_output == True:
+        print("best index: ", second_grid.best_index_) #position of the array of the degree
+        print("best param: ", second_grid.best_params_)
+        print("best score: ", second_grid.best_score_ *-1)
+        print("number of coefficients:",len(second_grid.best_estimator_.named_steps['linearregression'].coef_))
 
-# def run_lasso_(dataframe):
-#     '''
-#     Run Lasso... 
+        print('rmse_test == ', rmse_test)
+        print('rmse_train == ', rmse_train)
+        print(second_grid.best_estimator_.named_steps['linearregression'].coef_)
+        print("intercept == ",second_grid.best_estimator_.named_steps['linearregression'].intercept_)
 
-#     '''
+    res = pd.DataFrame(data = {'y': y_test, 'y_hat': y_hat, 
+    'resid': round(y_test - y_hat,1)})
     
-#     # Lose the columns we are predicting from inputs X, and write this to outputs y
-#     X = dataframe.drop('imdb_rating', axis = 1)
-#     y = dataframe["imdb_rating"]
+    res_train = pd.DataFrame(data={'y_train': y_train, 'y_hat_train': y_hat_train})
+    
+    return res, res_train, rmse_train, rmse_test
 
-#     # Test train split:
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+def run_ridge_(dataframe, show_output:bool):
+    '''
+    Run the polynomial regression model - is this identical to above?
+    '''
 
+    # # Lose the columns we are predicting from inputs X, and write this to outputs y
+    # X = dataframe.drop('imdb_rating', axis = 1)
+    # y = dataframe["imdb_rating"]
 
-#     alpha_list = np.linspace(0.01, 15, num=100)
+    # # Test train split:
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
 
-#     third = make_pipeline(
-#             StandardScaler(),
-#             PolynomialFeatures(),
-#             Lasso()
-#         )
+    X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
 
-#     parameters = {
-#         'polynomialfeatures__degree': np.arange(1,3,1),
-#         'lasso__alpha': alpha_list,
-#         'polynomialfeatures__include_bias': [True,False]
-#     }
-
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
-
-#     third_grid = GridSearchCV(third, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
-#     print("best index: ", third_grid.best_index_) #position of the array of the degree
-#     print("best param: ", third_grid.best_params_)
-#     print("best score: ", third_grid.best_score_ *-1)
-#     print("number of coefficients:",len(third_grid.best_estimator_.named_steps["lasso"].coef_))
+    alpha_list = np.logspace(-2, 3, num=200)
 
 
-#     y_hat = third_grid.predict(X_test)
-#     model_fit(third_grid, X_test, y_test, plot=True)
-#     rmse = mean_squared_error(y_test, y_hat, squared=False)
-#     print(rmse)
-#     print("coefficients == ", third_grid.best_estimator_.named_steps["lasso"].coef_)
-#     print("intercept == ", third_grid.best_estimator_.named_steps["lasso"].intercept_)
+    fourth = make_pipeline(
+            StandardScaler(),
+            PolynomialFeatures(),
+            Ridge(fit_intercept = False)   
+        )
 
-# def run_ridge_(dataframe):
-#     '''
-#     Run the polynomial regression model - is this identical to above?
-#     '''
+    parameters = {
+        'polynomialfeatures__degree': np.arange(1,3,1),
+        'ridge__alpha': alpha_list
+    }
 
-#     # Lose the columns we are predicting from inputs X, and write this to outputs y
-#     X = dataframe.drop('imdb_rating', axis = 1)
-#     y = dataframe["imdb_rating"]
+    kf = KFold(n_splits=5, shuffle=True, random_state=0)
 
-#     # Test train split:
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+    fourth_grid = GridSearchCV(fourth, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
 
-#     alpha_list = np.logspace(-2, 3, num=200)
+    y_hat = fourth_grid.predict(X_test)
+    y_hat_train = fourth_grid.predict(X_train)
+
+    model_fit(fourth_grid, X_test, y_test, plot=show_output)
+    rmse_test = mean_squared_error(y_test, y_hat, squared=False)
+    rmse_train = mean_squared_error(y_train, y_train, squared=False)
+
+    if show_output == True:
+
+        print("best index: ", fourth_grid.best_index_) #position of the array of the degree
+        print("best param: ", fourth_grid.best_params_)
+        print("best score: ", fourth_grid.best_score_ *-1)
+        print("number of coefficients:",len(fourth_grid.best_estimator_.named_steps["ridge"].coef_))
+
+        print('rmse_test == ', rmse_test)
+        print('rmse_train == ', rmse_train)
+        print("coefficients == ", fourth_grid.best_estimator_.named_steps["ridge"].coef_)
+        print("intercept == ", fourth_grid.best_estimator_.named_steps["ridge"].intercept_)
+
+    res = pd.DataFrame(
+            data = {'y': y_test, 'y_hat': y_hat, 'resid': round(y_test - y_hat,1)}
+        )
+    res_train = pd.DataFrame(data={'y_train': y_train, 'y_hat_train': y_hat_train})
+    
+        
+    return res, res_train, rmse_train, rmse_test
 
 
-#     fourth = make_pipeline(
-#             StandardScaler(),
-#             PolynomialFeatures(),
-#             Ridge()   
-#         )
 
-#     parameters = {
-#         'polynomialfeatures__degree': np.arange(1,3,1),
-#         'ridge__alpha': alpha_list,
-#         'polynomialfeatures__include_bias': [True,False]
-#     }
-
-#     kf = KFold(n_splits=5, shuffle=True, random_state=0)
-
-#     fourth_grid = GridSearchCV(fourth, parameters, cv=kf, scoring="neg_root_mean_squared_error").fit(X_train, y_train)
-#     print("best index: ", fourth_grid.best_index_) #position of the array of the degree
-#     print("best param: ", fourth_grid.best_params_)
-#     print("best score: ", fourth_grid.best_score_ *-1)
-#     print("number of coefficients:",len(fourth_grid.best_estimator_.named_steps["ridge"].coef_))
-
-#     y_hat = fourth_grid.predict(X_test)
-#     model_fit(fourth_grid, X_test, y_test, plot=True)
-#     rmse = mean_squared_error(y_test, y_hat, squared=False)
-#     print(rmse)
-#     print("coefficients == ", fourth_grid.best_estimator_.named_steps["ridge"].coef_)
-#     print("intercept == ", fourth_grid.best_estimator_.named_steps["ridge"].intercept_)
 
