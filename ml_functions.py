@@ -25,7 +25,7 @@ from sklearn.model_selection import GridSearchCV, KFold, cross_val_score, train_
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 
-
+############################## FEATURE ENGINEERING ########################################
 def typo_cleaner(col_name, df):
     '''
     Function looks at column of data in pd dataframe, and makes checks 
@@ -64,36 +64,10 @@ def typo_cleaner(col_name, df):
 
     print('Typo cleaner finished - if no other output, no changes were made')
 
-
-def season_plot(df):
-    # Plot Season Variation plot
-    fig, ax1 = plt.subplots()
-    ax2 = ax1.twinx()
-    sns.scatterplot(x='season', y='season average imdb rating',data=df.groupby(['season']).agg({ 'imdb_rating':'mean'}).reset_index().rename(columns={'imdb_rating':'season average imdb rating'}),ax = ax1, s=100, color="red", marker="+")
-    sns.scatterplot(x='season', y='imdb_rating',data=df,ax = ax1)
-    sns.lineplot(x = 'season', y='total_votes', data=df.groupby(['season']).agg({ 'total_votes':'sum'}).reset_index(), ax = ax2 )
-    ax1.set_xlabel('Season (1-9)')
-    ax1.set_ylabel('IMDB Rating')
-    ax2.set_ylabel('Total Votes')
-    plt.title('Season variation of episode popularity')
-    plt.show()
-
-def director_episode_plot(df):
-    dirs = pd.concat([df[['season','episode']],df['director'].str.rsplit(";", n=-1, expand=True)], axis = 1)
-    melted_dirs = dirs.melt(id_vars = ['season','episode'], value_name = 'directors').drop('variable',axis = 1).dropna()
-    melted_dirs['directors'].value_counts(normalize=False).plot(kind='bar')
-    plt.ylabel('Number of shows directed')
-    plt.title('Number of episodes each director has contributed to')
-
-def character_occurrences(df):
-    # How many times does each character occur in the data? (df only)
-    chars = pd.concat([df[['season','episode']],df['main_chars'].str.rsplit(";", n=-1, expand=True)], axis = 1)
-    melted_chars = chars.melt(id_vars = ['season','episode']).drop('variable',axis = 1).dropna()
-    melted_chars['value'].value_counts(normalize=False).plot(kind='bar')
-    plt.ylabel('Number of occurrences')
-    plt.title('Number of occurrences for each character')
-
 def date_and_time(df_full, df_split_test, ccc):
+    '''
+    Interrogation of the air_date to extract dummy columns for month, and day of the week
+    '''
     df_full = pd.concat([df_split_test, ccc], axis=1)
     df_full["month"] = df_full["air_date"].str[5:7]
     df_full['day_of_week'] = pd.to_datetime(df_full['air_date']).dt.dayofweek
@@ -103,28 +77,60 @@ def date_and_time(df_full, df_split_test, ccc):
     
     return df_full
 
-def create_corr_matrix_writers(df_model_data, writer_director:str):
-    # Correlation matrix for writer and director - change string at top to chage!
-    col_list = [col for col in df_model_data.columns if writer_director in col]
-    col_list.append('imdb_rating')
-    col_list
-    # corrMatrix = df_full.drop(['episode','n_lines','n_directions','n_lines', 'n_words','n_speak_char'], axis=1)
-    corrMatrix = df_model_data[col_list]
+def dataframe_prep(dataframe,col_predicted:str):
+    '''
+    Create inputs X dataframe, outputs y dataframe, and split the data using test_train_split from sklearn
+    inputs: dataframe = dataframe to be modelled
+            col_predicted
+    '''
+    # Lose the columns we are predicting from inputs X, and write this to outputs y
+    X = dataframe.drop(col_predicted, axis = 1)
+    y = dataframe[col_predicted]
 
-    ax3 = plt.axes()
+    # Test train split:
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
 
-    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax3)
-    ax3.set_title('Correlation matrix for writers or directors')
-    plt.show()
+    return X_train, X_test, y_train, y_test
 
-def create_corr_matrix_numeric(df):
-    corrMatrix = df[['imdb_rating','total_votes','episode','n_lines','n_directions','n_words','n_speak_char']]
-    ax1 = plt.axes()
-    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax1) 
-    ax1.set_title('Correlation matrix for numeric data fields')
-    plt.show()
+def elim_writers_directors(df_split_test):
+       '''
+       A function to eliminate writers and directors appearing less than 5 times in the data
+       Inputs: df_split_test == our original dataframe where directors and writers have been
+                                split into dummy variables
+        Outputs: to_elim_dirs == a list of directors to eliminate
+                 to_elim_writers == a list of writers to eliminate
+       '''
+
+       director_n = df_split_test.groupby('director') \
+              .agg({'director':'size', 'imdb_rating':'mean'}) \
+              .rename(columns={'director':'count','imdb_rating':'mean_rating'}) \
+              .reset_index()
+
+       multiple_dirs = director_n[director_n["count"]>= 5]
+       multiple_dirs.sort_values('mean_rating')
+       single_dirs = director_n[director_n["count"]< 5]
+
+       single_dirs['director'] = 'director_' + single_dirs['director'].astype(str)
+       to_elim_dirs = list(single_dirs['director'])
+
+       writer_n = df_split_test.groupby('writer') \
+              .agg({'writer':'size', 'imdb_rating':'mean'}) \
+              .rename(columns={'writer':'count','imdb_rating':'mean_rating'}) \
+              .reset_index()
+
+       multiple_writers = writer_n[writer_n["count"]>= 5]
+       single_writers = writer_n[writer_n["count"]< 5]
+       multiple_writers.sort_values('mean_rating')
+
+       single_writers['writer'] = 'writer_' + single_writers['writer'].astype(str)
+       to_elim_writers = list(single_writers['writer'])
+
+       return to_elim_dirs, to_elim_writers
 
 def create_df_full(df_split_test, character_cols):
+    '''
+    Create correlation matrix of imdb_rating with the characters available
+    '''
     # Reformat the date/time data to produce columns for month and day of the week
     df_full = pd.concat([df_split_test, character_cols], axis=1)
     df_full["month"] = df_full["air_date"].str[5:7]
@@ -135,20 +141,15 @@ def create_df_full(df_split_test, character_cols):
 
     return df_full
 
-def create_corr_matrix_characters(df, character_cols):
-    # Correlation between imdb_rating
-    corrMatrix = pd.concat([df['imdb_rating'], character_cols], axis=1)
-
-    ax2 = plt.axes()
-    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax2) 
-    ax2.set_title('Correlation matrix for characters with imdb_rating')
-    plt.show()
+######################### MODEL PREPROCESS / EXTRAS FROM COURSE #########################################
+#
 
 def get_coefs(m):
-    """Returns the model coefficients from a Scikit-learn model object as an array,
+    '''
+    Returns the model coefficients from a Scikit-learn model object as an array,
     includes the intercept if available.
-    """
-    
+    Credit for this function to course instructors and not authors
+    '''
     # If pipeline, use the last step as the model
     if (isinstance(m, sklearn.pipeline.Pipeline)):
         m = m.steps[-1][1]
@@ -193,7 +194,88 @@ def model_fit(m, X, y, plot = False):
     
     return rmse
 
+###################################### PLOTTING ###########################################
+
+def season_plot(df):
+    '''
+    Plot to show the variation of imdb_rating and total_votes with season number
+    '''
+    # Plot Season Variation plot
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    sns.scatterplot(x='season', y='season average imdb rating',data=df.groupby(['season']).agg({ 'imdb_rating':'mean'}).reset_index().rename(columns={'imdb_rating':'season average imdb rating'}),ax = ax1, s=100, color="red", marker="+")
+    sns.scatterplot(x='season', y='imdb_rating',data=df,ax = ax1)
+    sns.lineplot(x = 'season', y='total_votes', data=df.groupby(['season']).agg({ 'total_votes':'sum'}).reset_index(), ax = ax2 )
+    ax1.set_xlabel('Season (1-9)')
+    ax1.set_ylabel('IMDB Rating')
+    ax2.set_ylabel('Total Votes')
+    plt.title('Season variation of episode popularity')
+    plt.show()
+
+def create_corr_matrix_writers(df_model_data, writer_director:str):
+    '''
+    Create correlation matrix for imdb_rating and the writers or directors
+    input: writer_director == a string indicating which correlation matrix to show
+    '''
+    # Correlation matrix for writer and director - change string at top to chage!
+    col_list = [col for col in df_model_data.columns if writer_director in col]
+    col_list.append('imdb_rating')
+    col_list
+    # corrMatrix = df_full.drop(['episode','n_lines','n_directions','n_lines', 'n_words','n_speak_char'], axis=1)
+    corrMatrix = df_model_data[col_list]
+
+    ax3 = plt.axes()
+
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax3)
+    ax3.set_title('Correlation matrix for writers or directors')
+    plt.show()
+
+def director_episode_plot(df):
+    '''
+    Plot how many shows each director has contributed to
+    '''
+    dirs = pd.concat([df[['season','episode']],df['director'].str.rsplit(";", n=-1, expand=True)], axis = 1)
+    melted_dirs = dirs.melt(id_vars = ['season','episode'], value_name = 'directors').drop('variable',axis = 1).dropna()
+    melted_dirs['directors'].value_counts(normalize=False).plot(kind='bar')
+    plt.ylabel('Number of shows directed')
+    plt.title('Number of episodes each director has contributed to')
+
+def character_occurrences(df):
+    '''
+    Plot how often each character appears in the dataset (over all seasons)
+    '''
+    # How many times does each character occur in the data? (df only)
+    chars = pd.concat([df[['season','episode']],df['main_chars'].str.rsplit(";", n=-1, expand=True)], axis = 1)
+    melted_chars = chars.melt(id_vars = ['season','episode']).drop('variable',axis = 1).dropna()
+    melted_chars['value'].value_counts(normalize=False).plot(kind='bar')
+    plt.ylabel('Number of occurrences')
+    plt.title('Number of occurrences for each character')
+
+def create_corr_matrix_numeric(df):
+    '''
+    Creat correlation matrix of imdb_rating with the numeric data
+    '''
+    corrMatrix = df[['imdb_rating','total_votes','episode','n_lines','n_directions','n_words','n_speak_char']]
+    ax1 = plt.axes()
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax1) 
+    ax1.set_title('Correlation matrix for numeric data fields')
+    plt.show()
+
+def create_corr_matrix_characters(df, character_cols):
+    '''
+    Create correlation matrix of imdb_rating with the characters available
+    ''' 
+    corrMatrix = pd.concat([df['imdb_rating'], character_cols], axis=1)
+
+    ax2 = plt.axes()
+    sns.heatmap(corrMatrix.corr(), annot=True, ax=ax2) 
+    ax2.set_title('Correlation matrix for characters with imdb_rating')
+    plt.show()
+
 def features_overview(Features):
+    '''
+    Plot a bar graph of all of the individual features to visually show relative importance
+    '''
     fig, ax = plt.subplots(figsize=(20, 7)) 
     feature_plot = sns.barplot(data = Features, y='coefficients',x = 'Feature' , ax=ax)
     feature_plot.set_xticklabels(feature_plot.get_xticklabels(), rotation=45, horizontalalignment='right')
@@ -202,50 +284,7 @@ def features_overview(Features):
     plt.title('Coefficients of the Features within the Lasso Polynomial Model')
     plt.show()
 
-def dataframe_prep(dataframe,col_predicted:str):
-    '''
-    Create inputs X dataframe, outputs y dataframe, and split the data using test_train_split from sklearn
-    inputs: dataframe = dataframe to be modelled
-            col_predicted
-    '''
-    # Lose the columns we are predicting from inputs X, and write this to outputs y
-    X = dataframe.drop(col_predicted, axis = 1)
-    y = dataframe[col_predicted]
-
-    # Test train split:
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-
-    return X_train, X_test, y_train, y_test
-
-def elim_writers_directors(df_split_test):
-       
-       # Eliminating writers and directors that appear less than 5 times
-
-       director_n = df_split_test.groupby('director') \
-              .agg({'director':'size', 'imdb_rating':'mean'}) \
-              .rename(columns={'director':'count','imdb_rating':'mean_rating'}) \
-              .reset_index()
-
-       multiple_dirs = director_n[director_n["count"]>= 5]
-       multiple_dirs.sort_values('mean_rating')
-       single_dirs = director_n[director_n["count"]< 5]
-
-       single_dirs['director'] = 'director_' + single_dirs['director'].astype(str)
-       to_elim_dirs = list(single_dirs['director'])
-
-       writer_n = df_split_test.groupby('writer') \
-              .agg({'writer':'size', 'imdb_rating':'mean'}) \
-              .rename(columns={'writer':'count','imdb_rating':'mean_rating'}) \
-              .reset_index()
-
-       multiple_writers = writer_n[writer_n["count"]>= 5]
-       single_writers = writer_n[writer_n["count"]< 5]
-       multiple_writers.sort_values('mean_rating')
-
-       single_writers['writer'] = 'writer_' + single_writers['writer'].astype(str)
-       to_elim_writers = list(single_writers['writer'])
-
-       return to_elim_dirs, to_elim_writers
+############################# ANALYSIS ##################################
 
 def get_CI(y,y_hat):
     '''
@@ -256,6 +295,7 @@ def get_CI(y,y_hat):
     mean_error = np.mean(abs(y-y_hat)) 
     standard_error = np.sqrt(np.var(y - y_hat,ddof=1)/(len(y)))
     CI = mean_error + np.array([- 2*standard_error,2*standard_error])    
+    
     return  CI
 
 
@@ -306,7 +346,7 @@ def run_linear_regression(dataframe, show_output:bool):
 
 def run_poly_noint(dataframe,show_output:bool):
     '''
-    Polynomial regression model with standardisation
+    Polynomial regression model with no interactions
 
     '''
 
@@ -365,15 +405,8 @@ def run_poly_noint(dataframe,show_output:bool):
 
 def run_polynomial_regression(dataframe, show_output:bool):
     '''
-    Run the polynomial regression model 
+    Run the polynomial regression model - suppressed interactions
     '''
-
-    # # Lose the columns we are predicting from inputs X, and write this to outputs y
-    # X = dataframe.drop('imdb_rating', axis = 1)
-    # y = dataframe["imdb_rating"]
-
-    # # Test train split:
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
 
     X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
 
@@ -417,15 +450,8 @@ def run_polynomial_regression(dataframe, show_output:bool):
 
 def run_ridge_(dataframe, show_output:bool):
     '''
-    Run the polynomial regression model - is this identical to above?
+    Run the polynomial regression model 
     '''
-
-    # # Lose the columns we are predicting from inputs X, and write this to outputs y
-    # X = dataframe.drop('imdb_rating', axis = 1)
-    # y = dataframe["imdb_rating"]
-
-    # # Test train split:
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
 
     X_train, X_test, y_train, y_test = dataframe_prep(dataframe,'imdb_rating')
 
