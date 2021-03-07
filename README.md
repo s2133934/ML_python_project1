@@ -1,5 +1,25 @@
 # Machine Learning in Python - Project 1
 
+## Group and project information from students
+
+The file 'project1.ipynb' is our notebook for submission. The equivalently names pdf file is submitted on gradescope.
+
+All functions that the notebook is dependent on are found in 'ml_functions.py' and this is called from the project1 notebook.
+The requirements.txt has lines added for fuzzywuzzy.
+The original data remains unaltered from the original clone of assignment repository. No other datasets are used.
+We have tried to only include code where absolutely necessary, and for our final model choice - the rest are all in the 'ml_functions.py' file. This file is divided into rough sections for engineering, plotting, analysis and models to allow quick navigation and avoid having multiple files.
+
+GitHub repository address for this work: https://github.com/s2133934/ML_python_project1.git
+(belongs to one member of the group)
+
+Uses Python3 throughout, and other requirements are embedded in the top of the notebook in the Setup section.
+
+NB
+All three members of this group applied for and had approved a 7 day extension before the deadline on Friday 5th March 5pm.
+
+
+## Information on Assessment
+
 Due Friday, March 5th by 5 pm (UK local time)
 
 ## Data
